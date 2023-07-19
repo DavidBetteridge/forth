@@ -58,11 +58,25 @@ public class Engine
         _stack.Push(a * b);
     }
     
+    private void Divide(Symbol symbol)
+    {
+        var a = Pop(symbol);
+        var b = Pop(symbol);
+        _stack.Push(a / b);
+    }
+    
     private void Add(Symbol symbol)
     {
         var a = Pop(symbol);
         var b = Pop(symbol);
         _stack.Push(a + b);
+    }
+    
+    private void Subtract(Symbol symbol)
+    {
+        var a = Pop(symbol);
+        var b = Pop(symbol);
+        _stack.Push(b - 1);
     }
     
     private void Print(Symbol symbol)
@@ -87,7 +101,9 @@ public class Engine
     public Engine()
     {
         _words["+"] = Add;
+        _words["-"] = Subtract;
         _words["*"] = Product;
+        _words["/"] = Divide;
         _words["CR"] = NewLine;
         _words["."] = Print;
         _words["DUP"] = Duplicate;
@@ -103,6 +119,7 @@ public class Engine
                     break;
                 
                 case FunctionSymbol function:
+                    // Console.WriteLine($"Defining function {function.Name}");
                     _words[function.Name] = symbol => Execute(function.Body, symbol);
                     break;
                     
@@ -187,10 +204,58 @@ public class Engine
             }
             else if (token.StartsWith(":"))
             {
+                // Find the end of the function skipping over any comments
+                var numberOpen = 0;
+                while (nextSpace < statement.Length)
+                {
+                    if (statement[nextSpace] == '(')
+                    {
+                        numberOpen++;
+                    }
+                    else if (statement[nextSpace] == ')')
+                    {
+                        numberOpen--;
+                    }
+                    else if (statement[nextSpace] == ';')
+                    {
+                        if (numberOpen == 0)
+                        {
+                            break;
+                        }
+                    }
+                    nextSpace++;
+                }
+                
+                if (numberOpen != 0)
+                    throw new ForthException("Unbalanced parenthesis", new Symbol
+                    {
+                        LocationStart = p,
+                        LocationEnd = nextSpace
+                    });
+
+                if (nextSpace == statement.Length)
+                {
+                    throw new ForthException("Missing ;", new Symbol
+                    {
+                        LocationStart = p,
+                        LocationEnd = nextSpace
+                    });
+                }
+                
+                var text = statement[(p + 2)..(nextSpace - 1)];
+                var sep = text.IndexOf(' ');
+                
+                if (sep == -1)
+                    throw new ForthException("Missing function name", new Symbol
+                    {
+                        LocationStart = p,
+                        LocationEnd = nextSpace
+                    });
+                
                 yield return new FunctionSymbol
                 {
-                    Name = "numeric",
-                    Body = "",
+                    Name = text[..sep],
+                    Body = text[(sep + 1)..],
                     LocationStart = p, 
                     LocationEnd = p + token.Length};
             }
