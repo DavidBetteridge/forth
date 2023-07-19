@@ -1,23 +1,33 @@
-using System.Diagnostics;
-
 namespace Forth;
 
-public enum SymbolType
-{
-    Word,
-    Number,
-    Comment,
-    Function
-}
 
 public record Symbol
 {
-    public string Value { get; set; }
-
-    public int Location { get; set; }
-    
-    public SymbolType SymbolType { get; set; }
+    public int LocationStart { get; set; }
+    public int LocationEnd { get; set; }
 }
+
+public record NumberSymbol : Symbol
+{
+    public int Numeric { get; set; }
+}
+
+public record WordSymbol : Symbol
+{
+    public string Name { get; set; }
+}
+
+public record CommentSymbol : Symbol
+{
+    public string Content { get; set; }
+}
+
+public record FunctionSymbol : Symbol
+{
+    public string Name { get; set; }
+    public string Body { get; set; }
+}
+
 
 public class ForthException : Exception
 {
@@ -37,7 +47,7 @@ public class Engine
     private int Pop(Symbol symbol)
     {
         if (_stack.Count == 0)
-            throw new ForthException($"Stack is empty executing {symbol.Value} at position {symbol.Location}", symbol);
+            throw new ForthException($"Stack is empty executing command at position {symbol.LocationStart}", symbol);
         return _stack.Pop();
     }
     
@@ -83,44 +93,38 @@ public class Engine
         _words["DUP"] = Duplicate;
     }
     
-    public void Execute(string statement)
+    public void Execute(string statement, Symbol parent = null)
     {
         foreach (var symbol in GetSymbols(statement))
         {
-            switch (symbol.SymbolType)
+            switch (symbol)
             {
-                case SymbolType.Comment:
+                case CommentSymbol _:
                     break;
                 
-                case SymbolType.Function:
-                    var functionName = symbol.Value[1..];
-                    var functionBody = statement[(symbol.Location + symbol.Value.Length)..];
-                    _words[functionName] = s => Execute(functionBody);
-                    return;
-                
-                case SymbolType.Number:
-                    _stack.Push(symbol.Value);
+                case FunctionSymbol function:
+                    _words[function.Name] = symbol => Execute(function.Body, symbol);
+                    break;
+                    
+                case NumberSymbol number:
+                    _stack.Push(number.Numeric);
                     break;
                 
-                case SymbolType.Word:
+                case WordSymbol word:
+                    if (_words.TryGetValue(word.Name, out var action))
+                    {
+                        action(symbol);
+                    }
+                    else
+                    {
+                        throw new ForthException($"Unknown word {word.Name} at position {symbol.LocationStart}", symbol);
+                    }
                     break;
             }
-            
-            if (_words.TryGetValue(symbol.Value, out var action))
-            {
-                action(symbol);
-            }
-            else if (int.TryParse(symbol.Value, out var number))
-            {
-            }
-            else
-            {
-                throw new ForthException($"Unknown word {symbol.Value} at position {symbol.Location}", symbol);
-            }
-            
         }
         
-        Console.WriteLine(" OK");
+        if (parent is null)
+            Console.WriteLine(" OK");
     }
 
     private static IEnumerable<Symbol> GetSymbols(string statement)
@@ -136,21 +140,69 @@ public class Engine
 
             var token = statement[p..nextSpace];
             
-            var symbolType = SymbolType.Word;
             if (token.StartsWith("(") )
             {
-                symbolType = SymbolType.Comment;
+                // Keep advancing until we find the closing parenthesis
+                var numberOpen = 1;
+                while (nextSpace < statement.Length)
+                {
+                    if (statement[nextSpace] == '(')
+                    {
+                        numberOpen++;
+                    }
+                    else if (statement[nextSpace] == ')')
+                    {
+                        numberOpen--;
+                        if (numberOpen == 0)
+                        {
+                            break;
+                        }
+                    }
+                    nextSpace++;
+                }
+                
+                if (numberOpen != 0)
+                    throw new ForthException("Unbalanced parenthesis", new Symbol
+                    {
+                        LocationStart = p,
+                        LocationEnd = nextSpace
+                    });
+
+                var text = statement[(p + 2)..(nextSpace - 1)];
+                yield return new CommentSymbol
+                {
+                    Content = text, 
+                    LocationStart = p,
+                    LocationEnd = nextSpace
+                };
             }
-            else if (int.TryParse(token, out _))
+            else if (int.TryParse(token, out var numeric))
             {
-                symbolType = SymbolType.Number;
+                yield return new NumberSymbol
+                {
+                    Numeric = numeric, 
+                    LocationStart = p, 
+                    LocationEnd = p + token.Length
+                };
             }
             else if (token.StartsWith(":"))
             {
-                symbolType = SymbolType.Function;
-            }   
-            
-            yield return new Symbol{ Value = token, Location = p, SymbolType = symbolType};
+                yield return new FunctionSymbol
+                {
+                    Name = "numeric",
+                    Body = "",
+                    LocationStart = p, 
+                    LocationEnd = p + token.Length};
+            }
+            else
+            {
+                yield return new WordSymbol
+                {
+                    Name = token, 
+                    LocationStart = p, 
+                    LocationEnd = p + token.Length
+                };
+            }
             p = nextSpace + 1;
         }
     }

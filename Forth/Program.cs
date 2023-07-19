@@ -14,10 +14,10 @@ while (true)
     catch (ForthException e)
     {
         Console.WriteLine(e.Message);
-        Console.Write(statement![..e.Symbol.Location]);
+        Console.Write(statement![..e.Symbol.LocationStart]);
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.Write(e.Symbol.Value);
+        Console.Write(statement[e.Symbol.LocationStart..e.Symbol.LocationEnd]);
         Console.ResetColor();
-        Console.WriteLine(statement![(e.Symbol.Location + e.Symbol.Value.Length)..]);
+        Console.WriteLine(statement[e.Symbol.LocationEnd..]);
     }
 }
